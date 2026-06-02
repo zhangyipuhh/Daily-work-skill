@@ -126,6 +126,22 @@ python scripts/compare_history.py \
 - 进步/退步/持平/新增汇总
 - 关键洞察
 
+### Step 7.5 — 更新 Baseline 基准库（脚本）[V2.1 新增]
+```bash
+python scripts/update_baseline.py \
+  --input "D:\项目文档\AIAssistive\output\review_results_<week>.json" \
+  --db "D:\项目文档\AIAssistive\baseline\baseline.db"
+```
+
+行为：
+- 将本周评审结果写入 SQLite（`baseline.db`）
+- 同一 (week, name) 已存在则**覆盖**最新值
+- 打印：新增 N 条、覆盖 M 条、跳过 K 条
+- **必须**在 Step 8 DOCX 生成前跑完
+- 数据库不存在时自动初始化（含 review_history 表 + 索引）
+
+数据库结构详见 `references/baseline_readme.md`。
+
 ### Step 8 — 生成最终 DOCX 报告（脚本）
 ```bash
 python scripts/generate_report.py \
@@ -133,18 +149,21 @@ python scripts/generate_report.py \
   --excel "D:\项目文档\AIAssistive\output\文档审查结果_<week>.xlsx" \
   --trend-md "D:\项目文档\AIAssistive\output\趋势分析_<week>.md" \
   --missing-json "D:\项目文档\AIAssistive\output\missing_<week>.json" \
+  --db "D:\项目文档\AIAssistive\baseline\baseline.db" \
   --output "D:\项目文档\AIAssistive\output\AI辅助编程报告_<week>.docx" \
   --week "<week>"
 ```
 
-报告章节：
-1. 概述
-2. 汇总统计
-3. 评审结果汇总（Top/Bottom 开发者）
-4. 改进建议汇总
-5. 不足与改进建议
-6. 本周未提交者（漏检名单）
-7. 全量比对所有历史周 ← **最后一章**
+报告章节（**7 + 1 模型**，严格匹配 `references/report_format_spec.md`）：
+- 标题 + 副标题（居中）
+1. 第一章 概述
+2. 第二章 汇总统计
+3. 第三章 评审结果汇总（Top 10 / Bottom 5，含 AI 采纳率 + 改进优先级列）
+4. 第四章 改进建议汇总（4.1~4.5 五方面）
+5. 第五章 不足与改进建议（含 5.x 本周未提交者）
+6. 第六章 整体趋势变化分析
+7. **总结**（独立章节，参考样例 `AI辅助编程评审报告0511-0517.docx`）
+8. 第七章 全量比对（**最近 4 次**，从 baseline.db 读取，按人列趋势）
 
 ### Step 9 — 总结输出 + 临时文件清理
 1. 控制台打印：
@@ -165,12 +184,15 @@ python scripts/generate_report.py \
 - **评审模板**：`references/review_prompt.md`（基于 prompts.py 提炼）
 - **人名清单说明**：`references/members_readme.md`
 - **subagent 任务模板**：`references/subagent_task_template.md`（subagent 任务下发必读）
-- **Python 脚本**：`scripts/`（5 个脚本）
+- **报告格式说明**：`references/report_format_spec.md`（DOCX 段落/字体/表格规范，7+1 章节模型）
+- **Baseline 库说明**：`references/baseline_readme.md`（SQLite 表结构、查询示例、备份策略）
+- **Python 脚本**：`scripts/`（6 个脚本）
   - `check_missing.py` — 漏检检测
   - `validate_review_results.py` — 格式验证（独立工具）
   - `merge_review_results.py` — 多批次合并（Step 4.8）
   - `generate_excel.py` — JSON → Excel
   - `compare_history.py` — 全量历史对比
+  - `update_baseline.py` — Baseline 维护（Step 7.5，SQLite 写入）
   - `generate_report.py` — 生成最终 DOCX
 
 ## 错误处理
@@ -182,8 +204,10 @@ python scripts/generate_report.py \
 | 开发者文档为空 | 标记 `"insufficient_data"`，不阻断 |
 | Excel 生成失败 | 报错并保留 JSON |
 | 历史 Excel 为空 | 报告"无历史可比对"，跳过趋势章 |
-| 漏检人数 > 0 | **不阻断**，写入报告 |
+| 漏检人数 > 0 | **不阻断**，写入报告第五章 5.x |
 | review_results 格式验证失败 | 阻断后续步骤，提示检查评审质量 |
+| baseline.db 不存在 | `update_baseline.py` 自动初始化；DOCX 报告"无历史可比对" |
+| baseline.db 字段缺失 | `update_baseline.py` 跳过该条记录并打印跳过数 |
 
 ## 设计原则
 

@@ -22,15 +22,16 @@
 ## 9 步工作流
 
 ```
-Step 1  加载人名清单
-Step 2  扫描周目录
-Step 3  漏检检测（脚本，不阻断）
-Step 4  分批并行评审（5 人/批 × 8 批 + 批次验证 + 合并 + 补执行）
-Step 5  回跑漏检检测（用真实评审结果）
-Step 6  生成 Excel（脚本，参数化）
-Step 7  全量历史对比（脚本）
-Step 8  生成最终 DOCX（脚本）
-Step 9  总结输出（控制台）
+Step 1     加载人名清单
+Step 2     扫描周目录
+Step 3     漏检检测（脚本，不阻断）
+Step 4     分批并行评审（5 人/批 × 8 批 + 批次验证 + 合并 + 补执行）
+Step 5     回跑漏检检测（用真实评审结果）
+Step 6     生成 Excel（脚本，参数化）
+Step 7     全量历史对比（脚本）
+Step 7.5   更新 Baseline 基准库（脚本，SQLite 写入）
+Step 8     生成最终 DOCX（脚本，从 baseline.db 读取最近 4 次）
+Step 9     总结输出（控制台） + 临时文件清理
 ```
 
 ## 目录结构
@@ -45,11 +46,14 @@ aiweekly-report/
 │   ├── merge_review_results.py    # 多批次合并（Step 4.8）
 │   ├── generate_excel.py          # JSON → Excel（参数化）
 │   ├── compare_history.py         # 全量历史对比
+│   ├── update_baseline.py         # Baseline 维护（Step 7.5，SQLite）
 │   └── generate_report.py         # 生成最终 DOCX
 └── references/
     ├── review_prompt.md           # 评审模板（subagent 评审时必读）
     ├── subagent_task_template.md  # subagent 任务模板（主 Agent 派发任务时必读）
-    └── members_readme.md          # 人名清单说明
+    ├── members_readme.md          # 人名清单说明
+    ├── report_format_spec.md      # DOCX 报告格式说明（7+1 章节模型）
+    └── baseline_readme.md         # Baseline 库说明（SQLite 表结构）
 ```
 
 ## 单独运行脚本
@@ -91,8 +95,15 @@ python scripts/generate_report.py \
   --excel "D:\项目文档\AIAssistive\output\文档审查结果_0525-0531.xlsx" \
   --trend-md "D:\项目文档\AIAssistive\output\趋势分析_0525-0531.md" \
   --missing-json "D:\项目文档\AIAssistive\output\missing_0525-0531.json" \
+  --db "D:\项目文档\AIAssistive\baseline\baseline.db" \
   --output "D:\项目文档\AIAssistive\output\AI辅助编程报告_0525-0531.docx" \
   --week "0525-0531"
+```
+
+# 7. 更新 Baseline 基准库（Step 7.5）
+python scripts/update_baseline.py \
+  --input "D:\项目文档\AIAssistive\output\review_results_0525-0531.json" \
+  --db "D:\项目文档\AIAssistive\baseline\baseline.db"
 ```
 
 ## 依赖
