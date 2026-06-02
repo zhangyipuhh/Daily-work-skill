@@ -327,10 +327,10 @@ def chapter_gaps(doc, overview):
     add_paragraph(doc, "### 5.1 数据缺失问题分析", bold=True, size=12)
     add_paragraph(
         doc,
-        f"本次评审发现 {len(no_data)} 位开发者存在数据缺失问题，主要表现为：",
+        f"本次评审发现 {len(no_data)} 位开发者存在数据缺失问题（已按 0 分计入总评），主要表现为：",
     )
     rows = [
-        ["数据缺失（无评分）", f"{len(no_data)} 人", ", ".join(no_data[:10]) + ("..." if len(no_data) > 10 else "")],
+        ["未提交（已计 0 分）", f"{len(no_data)} 人", ", ".join(no_data[:10]) + ("..." if len(no_data) > 10 else "")],
         ["缺文档（仅有代码）", f"{len(no_doc)} 人", ", ".join(no_doc[:10]) or "—"],
         ["缺代码（仅有文档）", f"{len(no_code)} 人", ", ".join(no_code[:10]) or "—"],
         ["反模式命中", f"{len(anti)} 人", ", ".join(anti[:10]) or "—"],
@@ -356,18 +356,29 @@ def chapter_gaps(doc, overview):
         add_bullet(doc, s)
 
 
-def chapter_missing_inline(doc, missing, total_members, reviewed_count):
-    """嵌入第五章 5.x，作为子章节"""
-    add_heading(doc, "5.x 本周未提交者", level=2)
+def chapter_missing_inline(doc, not_submitted, not_reviewed, total_members, actually_attended, reviewed_count):
+    """嵌入第五章 5.x，拆分两类漏检（V2.2）"""
+    add_heading(doc, "5.x 漏检汇总", level=2)
     add_paragraph(
         doc,
-        f"应到 {total_members} 人，已评审 {reviewed_count} 人，未提交 {len(missing)} 人。",
+        f"应到 {total_members} 人，周目录实到 {actually_attended} 人，已评审 {reviewed_count} 人。",
     )
-    if missing:
-        rows = [[i + 1, name] for i, name in enumerate(missing)]
+    rows = [
+        ["真未提交 (A)", f"{len(not_submitted)} 人", "周目录无子目录，已按 0 分计入总评"],
+        ["漏评审 (B)", f"{len(not_reviewed)} 人", "周目录有材料但模型未评审，需补件重评"],
+    ]
+    add_table(doc, ["漏检类型", "人数", "处理方式"], rows)
+
+    if not_submitted:
+        add_paragraph(doc, "5.x.1 真未提交者名单（已计 0 分）", bold=True, size=11)
+        rows = [[i + 1, name] for i, name in enumerate(not_submitted)]
         add_table(doc, ["序号", "姓名"], rows)
-    else:
-        add_paragraph(doc, "本周无漏检，全员提交。")
+    if not_reviewed:
+        add_paragraph(doc, "5.x.2 漏评审名单（已补件重评）", bold=True, size=11)
+        rows = [[i + 1, name] for i, name in enumerate(not_reviewed)]
+        add_table(doc, ["序号", "姓名"], rows)
+    if not not_submitted and not not_reviewed:
+        add_paragraph(doc, "本周无漏检，全员已评审。")
 
 
 def chapter_full_compare(doc, trend_md):
@@ -551,12 +562,20 @@ def main():
     _ = (excel_headers, excel_rows)
 
     missing = []
+    not_submitted = []
+    not_reviewed = []
     total_members = 0
+    actually_attended = 0
     reviewed_count = overview["count"]
     if missing_json and missing_json.exists():
         m = load_json(missing_json)
-        missing = m.get("missing", [])
+        not_submitted = m.get("not_submitted", [])
+        not_reviewed = m.get("not_reviewed", [])
+        if not not_submitted and not not_reviewed:
+            not_submitted = m.get("missing", [])
+        missing = sorted(set(not_submitted) | set(not_reviewed))
         total_members = m.get("total_members", 0)
+        actually_attended = m.get("actually_attended", 0)
         reviewed_count = m.get("reviewed_count", reviewed_count)
 
     current_names = []
@@ -608,7 +627,7 @@ def main():
     chapter_top_bottom(doc, overview)
     chapter_improvements(doc, overview)
     chapter_gaps(doc, overview)
-    chapter_missing_inline(doc, missing, total_members, reviewed_count)
+    chapter_missing_inline(doc, not_submitted, not_reviewed, total_members, actually_attended, reviewed_count)
     chapter_full_compare(doc, trend_md)
     chapter_conclusion(doc, overview)
     chapter_baseline_compare(doc, db_path, week, current_names)

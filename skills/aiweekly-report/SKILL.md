@@ -44,18 +44,37 @@ D:\项目文档\AIAssistive\aiweek\2026\05\0525-0531
 ### Step 2 — 扫描周目录
 列出 `<input_path>/*/` 下所有子目录名，得到 `set_actually_attended`。
 
-### Step 3 — 漏检检测（脚本）
-调用：
+### Step 3 — 漏检检测（脚本，V2.2 拆分两类）
 ```bash
 python scripts/check_missing.py \
   --members "D:\项目文档\AIAssistive\project_284_members.txt" \
-  --reviewed <待 Step 4 完成后填入> \
+  --attended "<week_dir>" \
+  --reviewed "D:\项目文档\AIAssistive\output\review_results_<week>.json" \
   --output-json "D:\项目文档\AIAssistive\output\missing_<week>.json"
 ```
 
 ⚠️ **此步骤在 Step 4 完成后执行**（因为需要 review_results.json）。
-脚本会输出漏检名单到控制台，并将结果 JSON 写入指定路径。
-**不阻断流程**。漏检名单将传至 Step 7 嵌入报告第六章。
+
+**V2.2 拆分两类漏检**：
+- **真未提交 (A)**：人名清单有，但周目录无子目录 → 应补 **0 分**
+- **漏评审 (B)**：周目录有子目录，但 review_results.json 缺该名字 → 应**补件**（重派 subagent 评审）
+
+输出 JSON：
+```json
+{
+  "total_members": 40,
+  "actually_attended": 35,
+  "reviewed_count": 33,
+  "not_submitted": ["张三", "李四", ...],   // 情况 A
+  "not_submitted_count": 5,
+  "not_reviewed": ["周八", "吴九"],          // 情况 B
+  "not_reviewed_count": 2,
+  "missing": [...],                          // 兼容字段
+  "missing_count": 7
+}
+```
+
+**不阻断流程**。漏检名单将传至 Step 8 嵌入报告第五章 5.x。
 
 ### Step 4 — 分批并行评审（核心）
 1. 把 `set_actually_attended` 按 `batch_size = 5` 切分（40 人 → 8 批）
@@ -96,10 +115,46 @@ python scripts/check_missing.py \
    - **合并成功后保留 `tmp\batch_<week>_*.json` 不删**（Step 9 统一清理）
 9. 验证通过的合并 JSON 即为最终产物，位于 `D:\项目文档\AIAssistive\output\review_results_<week>.json`
 
-### Step 5 — 回跑漏检检测
-使用 Step 4 生成的 `review_results_<week>.json` 回跑 Step 3 的脚本，
-将漏检名单 JSON 写入指定路径。
+### Step 4.10 — 自动补件（仅当 not_reviewed > 0，V2.2 新增）
 
+**触发条件**：Step 3 漏检检测发现 `not_reviewed_count > 0`（漏评审）
+
+**逻辑**：
+1. 主 Agent 检测到漏评审（情况 B）
+2. 自动派发新 subagent，**仅评审 not_reviewed 名单**（避免重复工作）
+3. 写 `tmp/batch_<week>_repair_<idx>.json`
+4. 调用 `merge_review_results.py` 合并到 review_results.json
+5. **回跑 Step 3** 验证 not_reviewed → 0
+6. **最多重试 2 轮**（避免无限循环），仍 > 0 则控制台报警
+
+**为什么需要补件**：周目录有子目录说明开发者提交了材料，但模型评审时漏掉，强行 0 分不公正。必须重新评审。
+
+### Step 4.11 — 补 0 分（仅当 not_submitted > 0，V2.2 新增）
+
+**触发条件**：Step 4.10 完成后，再跑 Step 3 漏检，若 `not_submitted_count > 0`
+
+```bash
+python scripts/fill_zero_score.py \
+  --reviewed "D:\项目文档\AIAssistive\output\review_results_<week>.json" \
+  --missing "D:\项目文档\AIAssistive\output\missing_<week>.json"
+```
+
+**行为**：
+- 从 missing.json 读 `not_submitted` 字段（不读 `missing`，避免污染）
+- 给真未提交者补 0 分条目（含反模式命中、priority=high）
+- 已存在的同名记录**跳过**（不覆盖）
+- 输出 review_results.json 原地覆盖
+
+**为什么是 0 分**：真未提交 = 完全没材料，应得 0 分。计入"有效评分人数"和平均分（拉低平均）。
+
+### Step 5 — 回跑漏检检测
+使用 Step 4.11 补 0 后的 `review_results_<week>.json` 回跑 Step 3 的脚本。
+
+**期望结果**：
+- `not_submitted: []`（已补 0）
+- `not_reviewed: []`（已补件）
+- 两者都为空 → 进入 Step 6
+- 否则阻断（补 0/补件没成功）
 ### Step 6 — 生成 Excel（脚本，参数化）
 ```bash
 python scripts/generate_excel.py \
@@ -186,10 +241,11 @@ python scripts/generate_report.py \
 - **subagent 任务模板**：`references/subagent_task_template.md`（subagent 任务下发必读）
 - **报告格式说明**：`references/report_format_spec.md`（DOCX 段落/字体/表格规范，7+1 章节模型）
 - **Baseline 库说明**：`references/baseline_readme.md`（SQLite 表结构、查询示例、备份策略）
-- **Python 脚本**：`scripts/`（6 个脚本）
-  - `check_missing.py` — 漏检检测
+- **Python 脚本**：`scripts/`（8 个脚本）
+  - `check_missing.py` — 漏检检测（V2.2 拆分 not_submitted/not_reviewed）
   - `validate_review_results.py` — 格式验证（独立工具）
   - `merge_review_results.py` — 多批次合并（Step 4.8）
+  - `fill_zero_score.py` — 真未提交补 0 分（Step 4.11）
   - `generate_excel.py` — JSON → Excel
   - `compare_history.py` — 全量历史对比
   - `update_baseline.py` — Baseline 维护（Step 7.5，SQLite 写入）
@@ -204,7 +260,8 @@ python scripts/generate_report.py \
 | 开发者文档为空 | 标记 `"insufficient_data"`，不阻断 |
 | Excel 生成失败 | 报错并保留 JSON |
 | 历史 Excel 为空 | 报告"无历史可比对"，跳过趋势章 |
-| 漏检人数 > 0 | **不阻断**，写入报告第五章 5.x |
+| 漏检人数 > 0 | **不阻断**，分类处理：A 真未提交补 0 分；B 漏评审补件 |
+| 漏评审 (B) 补件 2 轮后仍 > 0 | 控制台报警，标记异常，不阻断 |
 | review_results 格式验证失败 | 阻断后续步骤，提示检查评审质量 |
 | baseline.db 不存在 | `update_baseline.py` 自动初始化；DOCX 报告"无历史可比对" |
 | baseline.db 字段缺失 | `update_baseline.py` 跳过该条记录并打印跳过数 |

@@ -24,9 +24,11 @@
 ```
 Step 1     加载人名清单
 Step 2     扫描周目录
-Step 3     漏检检测（脚本，不阻断）
+Step 3     漏检检测（脚本，V2.2 拆分 A 真未提交 + B 漏评审）
 Step 4     分批并行评审（5 人/批 × 8 批 + 批次验证 + 合并 + 补执行）
-Step 5     回跑漏检检测（用真实评审结果）
+Step 4.10  自动补件（仅当 not_reviewed > 0，重派 subagent 评审）
+Step 4.11  补 0 分（仅当 not_submitted > 0，fill_zero_score 写入）
+Step 5     回跑漏检检测（期望 not_submitted/not_reviewed = 0）
 Step 6     生成 Excel（脚本，参数化）
 Step 7     全量历史对比（脚本）
 Step 7.5   更新 Baseline 基准库（脚本，SQLite 写入）
@@ -41,9 +43,10 @@ aiweekly-report/
 ├── SKILL.md                       # 主入口（Agent 加载此文件执行）
 ├── README.md                      # 本文件
 ├── scripts/
-│   ├── check_missing.py           # 漏检检测
+│   ├── check_missing.py           # 漏检检测（V2.2 拆分 A 真未提交 / B 漏评审）
 │   ├── validate_review_results.py # 格式验证（独立工具）
 │   ├── merge_review_results.py    # 多批次合并（Step 4.8）
+│   ├── fill_zero_score.py         # 真未提交补 0 分（Step 4.11）
 │   ├── generate_excel.py          # JSON → Excel（参数化）
 │   ├── compare_history.py         # 全量历史对比
 │   ├── update_baseline.py         # Baseline 维护（Step 7.5，SQLite）
@@ -61,9 +64,10 @@ aiweekly-report/
 每个脚本都可独立运行，便于调试和复用：
 
 ```bash
-# 1. 漏检检测
+# 1. 漏检检测（V2.2：拆分真未提交/漏评审）
 python scripts/check_missing.py \
   --members "D:\项目文档\AIAssistive\project_284_members.txt" \
+  --attended "D:\项目文档\AIAssistive\aiweek\2026\05\0525-0531" \
   --reviewed "D:\项目文档\AIAssistive\output\review_results_0525-0531.json" \
   --output-json "D:\项目文档\AIAssistive\output\missing_0525-0531.json"
 
@@ -104,6 +108,11 @@ python scripts/generate_report.py \
 python scripts/update_baseline.py \
   --input "D:\项目文档\AIAssistive\output\review_results_0525-0531.json" \
   --db "D:\项目文档\AIAssistive\baseline\baseline.db"
+
+# 8. 真未提交补 0 分（Step 4.11，仅当 not_submitted > 0）
+python scripts/fill_zero_score.py \
+  --reviewed "D:\项目文档\AIAssistive\output\review_results_0525-0531.json" \
+  --missing "D:\项目文档\AIAssistive\output\missing_0525-0531.json"
 ```
 
 ## 依赖
