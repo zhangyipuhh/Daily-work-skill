@@ -1,0 +1,482 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+DZ_GG_JYDFW 表的格式校验脚本。
+构建期由 build_artifacts.py 自动生成，请勿手工修改。
+运行时由 SKILL.md 通过 `python DZ_GG_JYDFW.py --record '<json>'` 调用。
+"""
+import argparse
+import json
+import re
+import sys
+from datetime import datetime
+
+
+TABLE_CODE = 'DZ_GG_JYDFW'
+PRIMARY_KEY = 'OBJECTID'
+FIELDS = [{'seq': '1',
+  'name': '主键',
+  'code': 'OBJECTID',
+  'type': 'INT',
+  'length': None,
+  'decimal': None,
+  'constraint': 'M',
+  'comment': '主键'},
+ {'seq': '2',
+  'name': '工规许可主键',
+  'code': 'GGXKID',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'M',
+  'comment': 'DZ_YG_XKXX主键'},
+ {'seq': '3',
+  'name': '要素代码',
+  'code': 'YSDM',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'M',
+  'comment': '参考国标要素代码取值"8005010300"'},
+ {'seq': '4',
+  'name': '电子监管号',
+  'code': 'DZJGH',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'M',
+  'comment': ''},
+ {'seq': '5',
+  'name': '项目代码',
+  'code': 'XMDM',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '6',
+  'name': '用地许可证号',
+  'code': 'YGDZJGH',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '7',
+  'name': '建设单位',
+  'code': 'JSDW',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'M',
+  'comment': ''},
+ {'seq': '8',
+  'name': '建设项目名称',
+  'code': 'XMMC',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'M',
+  'comment': ''},
+ {'seq': '9',
+  'name': '证书编号',
+  'code': 'ZSBH',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'M',
+  'comment': ''},
+ {'seq': '10',
+  'name': '发证日期',
+  'code': 'FZRQ',
+  'type': 'Date',
+  'length': None,
+  'decimal': None,
+  'constraint': 'M',
+  'comment': ''},
+ {'seq': '11',
+  'name': '发证机关',
+  'code': 'FZJG',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'M',
+  'comment': ''},
+ {'seq': '12',
+  'name': '建设拟选位置',
+  'code': 'JSWZ',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'M',
+  'comment': ''},
+ {'seq': '13',
+  'name': '拟建设规模',
+  'code': 'JSGM',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '14',
+  'name': '拟用地面积',
+  'code': 'YDMJ',
+  'type': 'Char',
+  'length': 254,
+  'decimal': None,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '15',
+  'name': '总用地面积',
+  'code': 'ZYDMJ',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '16',
+  'name': '净用地面积',
+  'code': 'JYDMJ',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '17',
+  'name': '计容用地面积',
+  'code': 'JRYDMJ',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '18',
+  'name': '总建筑面积',
+  'code': 'ZJZMJ',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'M',
+  'comment': '平方米'},
+ {'seq': '19',
+  'name': '地上总建筑面积',
+  'code': 'DSZJZMJ',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '20',
+  'name': '地下总建筑面积',
+  'code': 'DXZJZMJ',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '21',
+  'name': '计容建筑面积',
+  'code': 'JRJZMJ',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '22',
+  'name': '住宅建筑面积',
+  'code': 'ZZJZMJ',
+  'type': 'Char',
+  'length': None,
+  'decimal': None,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '23',
+  'name': '商业建筑面积',
+  'code': 'SYJZMJ',
+  'type': 'Char',
+  'length': None,
+  'decimal': None,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '24',
+  'name': '容积率',
+  'code': 'RJL',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '25',
+  'name': '建筑密度',
+  'code': 'JZMD',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '26',
+  'name': '绿地率',
+  'code': 'LDL',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '27',
+  'name': '建筑限高',
+  'code': 'JZXG',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '米'},
+ {'seq': '28',
+  'name': '机动车停车位',
+  'code': 'JDCTCW',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '29',
+  'name': '地上机动车停车位',
+  'code': 'DSJDCTCW',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '30',
+  'name': '地下机动车停车位',
+  'code': 'DXJDCTCW',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '31',
+  'name': '非机动车停车位',
+  'code': 'FJDCTCW',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '32',
+  'name': '地上非机动车停车位',
+  'code': 'DSFJDCTCW',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '33',
+  'name': '地下非机动车停车位',
+  'code': 'DXFJDCTCW',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '34',
+  'name': '社区服务站（含党群服务用房）',
+  'code': 'SQFWZ',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '35',
+  'name': '养老服务设施',
+  'code': 'YLFWSS',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '36',
+  'name': '菜市场',
+  'code': 'CSC',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '37',
+  'name': '物业用房及社区快递驿站',
+  'code': 'WYYF',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '38',
+  'name': '体育设施',
+  'code': 'TYSS',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '39',
+  'name': '便利店',
+  'code': 'BLD',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '40',
+  'name': '文化活动室',
+  'code': 'WHHDS',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '41',
+  'name': '卫生医疗',
+  'code': 'WSYL',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '43',
+  'name': '拆迁安置面积',
+  'code': 'CQAZMJ',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '44',
+  'name': '廉租房面积',
+  'code': 'LZFMJ',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': '平方米'},
+ {'seq': '45',
+  'name': '户数',
+  'code': 'HS',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''},
+ {'seq': '46',
+  'name': '人口',
+  'code': 'RKS',
+  'type': 'Float',
+  'length': None,
+  'decimal': 4,
+  'constraint': 'O',
+  'comment': ''}]
+
+
+def _is_blank(v) -> bool:
+    return v is None or (isinstance(v, str) and v.strip() == "")
+
+
+def _check_char(value, length, field_code, errors):
+    if not isinstance(value, str):
+        errors.append(f"{field_code}: 类型错误, 期望 str, 实际 {type(value).__name__}")
+        return
+    if length is not None and len(value) > length:
+        errors.append(f"{field_code}: 长度超限, 最大 {length}, 实际 {len(value)}")
+
+
+def _check_int(value, field_code, errors):
+    if isinstance(value, bool):
+        errors.append(f"{field_code}: 类型错误, 期望 int, 实际 bool")
+        return
+    if not isinstance(value, int):
+        errors.append(f"{field_code}: 类型错误, 期望 int, 实际 {type(value).__name__}")
+
+
+def _check_float(value, decimal, field_code, errors):
+    if isinstance(value, bool):
+        errors.append(f"{field_code}: 类型错误, 期望 float, 实际 bool")
+        return
+    if not isinstance(value, (int, float)):
+        errors.append(f"{field_code}: 类型错误, 期望 float, 实际 {type(value).__name__}")
+        return
+    if decimal is not None:
+        s = str(value)
+        if "." in s:
+            frac = s.split(".", 1)[1]
+            if len(frac) > decimal:
+                errors.append(f"{field_code}: 小数位超限, 最大 {decimal}, 实际 {len(frac)}")
+
+
+def _check_date(value, field_code, errors):
+    if not isinstance(value, str):
+        errors.append(f"{field_code}: 类型错误, 期望 str(ISO 8601), 实际 {type(value).__name__}")
+        return
+    if not re.match(r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}:\d{2})?$", value):
+        errors.append(f"{field_code}: 日期格式错误, 期望 YYYY-MM-DD 或 ISO 8601, 实际 {value!r}")
+        return
+    try:
+        datetime.fromisoformat(value.replace(" ", "T"))
+    except ValueError:
+        errors.append(f"{field_code}: 日期值非法, {value!r}")
+
+
+def validate(record: dict) -> tuple[bool, list[str]]:
+    """格式校验
+
+    Args:
+        record: LLM 抽出的字段 dict
+
+    Returns:
+        (ok, errors) 元组
+    """
+    errors: list[str] = []
+    if not isinstance(record, dict):
+        return False, ["record 必须是 dict"]
+
+    for f in FIELDS:
+        code = f["code"]
+        ftype = f["type"]
+        flen = f["length"]
+        fdec = f["decimal"]
+        constraint = f["constraint"]
+        value = record.get(code)
+
+        if _is_blank(value):
+            if constraint == "M":
+                errors.append(f"{code}: 必填字段为空")
+            continue
+
+        if ftype == "Char":
+            _check_char(value, flen, code, errors)
+        elif ftype == "INT":
+            _check_int(value, code, errors)
+        elif ftype == "Float":
+            _check_float(value, fdec, code, errors)
+        elif ftype == "Date":
+            _check_date(value, code, errors)
+
+    return (len(errors) == 0, errors)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=f"{TABLE_CODE} 表格式校验")
+    parser.add_argument("--record", required=True, help="JSON 字符串或 @file 路径")
+    args = parser.parse_args()
+
+    if args.record.startswith("@"):
+        with open(args.record[1:], "r", encoding="utf-8") as f:
+            record = json.load(f)
+    else:
+        record = json.loads(args.record)
+
+    ok, errors = validate(record)
+    print(json.dumps({"ok": ok, "errors": errors}, ensure_ascii=False))
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()
