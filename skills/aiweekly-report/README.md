@@ -4,7 +4,7 @@
 
 ## 这是什么
 
-当你让 Agent "生成某周周报" 时，Agent 会加载本 Skill，按 9 步流程端到端产出三个文件：
+当你让 Agent "生成某周周报" 时，Agent 会加载本 Skill，按 8 步流程端到端产出三个文件：
 
 | 产物 | 路径 | 用途 |
 |------|------|------|
@@ -15,9 +15,9 @@
 ## 核心设计
 
 - **评审者是大模型本身**，不再调任何 LLM API
-- **确定的事由脚本完成**（漏检检测、Excel 生成、历史对比、DOCX 排版）
+- **确定的事由脚本完成**（漏检检测、Excel 生成、Baseline 写入、DOCX 排版）
 - **判断的事由模型完成**（文档质量评分、AI 痕迹识别、洞察生成）
-- **评审步骤按 5 人/批并行**：40 人 → 8 个 subagent 同时跑
+- **评审步骤按 5 人/批并行**：→ ⌈N/5⌉ 个 subagent 同时跑（N = 实际参评人数，人数动态不写死）
 
 ## 9 步工作流
 
@@ -25,14 +25,13 @@
 Step 1     加载人名清单
 Step 2     扫描周目录
 Step 3     漏检检测（脚本，V2.2 拆分 A 真未提交 + B 漏评审）
-Step 4     分批并行评审（5 人/批 × 8 批 + 批次验证 + 合并 + 补执行）
+Step 4     分批并行评审（5 人/批 × ⌈N/5⌉ 批 + 批次验证 + 合并 + 补执行）
 Step 4.10  自动补件（仅当 not_reviewed > 0，重派 subagent 评审）
 Step 4.11  补 0 分（仅当 not_submitted > 0，fill_zero_score 写入）
 Step 5     回跑漏检检测（期望 not_submitted/not_reviewed = 0）
 Step 6     生成 Excel（脚本，参数化）
-Step 7     全量历史对比（脚本）
-Step 7.5   更新 Baseline 基准库（脚本，SQLite 写入）
-Step 8     生成最终 DOCX（脚本，从 baseline.db 读取最近 4 次）
+Step 7     更新 Baseline 基准库（脚本，SQLite 写入）
+Step 8     生成最终 DOCX（脚本，从 baseline.db 读取第六章趋势 + 第七章全量比对）
 Step 9     总结输出（控制台） + 临时文件清理
 ```
 
@@ -48,8 +47,7 @@ aiweekly-report/
 │   ├── merge_review_results.py    # 多批次合并（Step 4.8）
 │   ├── fill_zero_score.py         # 真未提交补 0 分（Step 4.11）
 │   ├── generate_excel.py          # JSON → Excel（参数化）
-│   ├── compare_history.py         # 全量历史对比
-│   ├── update_baseline.py         # Baseline 维护（Step 7.5，SQLite）
+│   ├── update_baseline.py         # Baseline 维护（Step 7，SQLite）
 │   └── generate_report.py         # 生成最终 DOCX
 └── references/
     ├── review_prompt.md           # 评审模板（subagent 评审时必读）
@@ -87,29 +85,21 @@ python scripts/generate_excel.py \
   --input "D:\项目文档\AIAssistive\output\review_results_0525-0531.json" \
   --output "D:\项目文档\AIAssistive\output\文档审查结果_0525-0531.xlsx"
 
-# 5. 全量历史对比
-python scripts/compare_history.py \
-  --current "D:\项目文档\AIAssistive\output\review_results_0525-0531.json" \
-  --history-dir "D:\项目文档\AIAssistive\output" \
-  --output "D:\项目文档\AIAssistive\output\趋势分析_0525-0531.md"
-
-# 6. 生成 DOCX
+# 5. 生成 DOCX
 python scripts/generate_report.py \
   --json "D:\项目文档\AIAssistive\output\review_results_0525-0531.json" \
   --excel "D:\项目文档\AIAssistive\output\文档审查结果_0525-0531.xlsx" \
-  --trend-md "D:\项目文档\AIAssistive\output\趋势分析_0525-0531.md" \
   --missing-json "D:\项目文档\AIAssistive\output\missing_0525-0531.json" \
   --db "D:\项目文档\AIAssistive\baseline\baseline.db" \
   --output "D:\项目文档\AIAssistive\output\AI辅助编程报告_0525-0531.docx" \
   --week "0525-0531"
-```
 
-# 7. 更新 Baseline 基准库（Step 7.5）
+# 6. 更新 Baseline 基准库（Step 7）
 python scripts/update_baseline.py \
   --input "D:\项目文档\AIAssistive\output\review_results_0525-0531.json" \
   --db "D:\项目文档\AIAssistive\baseline\baseline.db"
 
-# 8. 真未提交补 0 分（Step 4.11，仅当 not_submitted > 0）
+# 7. 真未提交补 0 分（Step 4.11，仅当 not_submitted > 0）
 python scripts/fill_zero_score.py \
   --reviewed "D:\项目文档\AIAssistive\output\review_results_0525-0531.json" \
   --missing "D:\项目文档\AIAssistive\output\missing_0525-0531.json"
@@ -130,3 +120,6 @@ python scripts/fill_zero_score.py \
 - `generate_excel.py` 已参数化（支持 `--input` / `--output`），向后兼容默认路径
 - **subagent 必须把结果写入磁盘文件**（`tmp\batch_<week>_<idx>.json`），**不允许只返回 JSON 字符串**
 - 临时批次文件由 Step 9 统一清理（`rm tmp\batch_<week>_*.json`）
+- ⚠️ **人名清单唯一**：`project_284_members.txt` 是评审者名单的唯一权威来源（**人数动态，不写死**）；目录内的 `config.yaml`、其他人名文件、子目录扫描结果均**不参与**名单决策
+- ⚠️ **必须 subagent 并行**：评审阶段必须派发 subagent（批次数 = ⌈N/5⌉），主 Agent 不得自行串行评审任何开发者文档
+- ⚠️ **subagent 不可绕过**：禁止以"效率更高 / 更准确 / team plan 验证约束 / verifier 缺失 / 节省时间"等任何理由让主 Agent 直接评审；如遇外部约束，应**修改 plan 配置补充 verifier**，而非绕过 subagent

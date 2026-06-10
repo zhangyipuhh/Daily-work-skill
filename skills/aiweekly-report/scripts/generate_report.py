@@ -381,44 +381,88 @@ def chapter_missing_inline(doc, not_submitted, not_reviewed, total_members, actu
         add_paragraph(doc, "本周无漏检，全员已评审。")
 
 
-def chapter_full_compare(doc, trend_md):
-    """第六章 整体趋势变化分析"""
+def chapter_full_compare(doc, db_path, current_week):
+    """第六章 整体趋势变化分析，从 SQLite 读取"""
     add_heading(doc, "第六章 整体趋势变化分析", level=1)
-    add_paragraph(
-        doc,
-        "本章将本周数据与历史周数据进行对比，展示整体趋势与个体变化。",
-    )
-    if not trend_md or not trend_md.exists():
-        add_paragraph(doc, "无趋势分析文件，跳过趋势渲染。")
+    add_paragraph(doc, "本章将本周数据与历史周数据进行对比，展示整体趋势。")
+
+    if not db_path.exists():
+        add_paragraph(doc, f"未找到 baseline 数据库，跳过趋势分析。")
         return
-    text = trend_md.read_text(encoding="utf-8")
-    lines = text.splitlines()
-    i = 0
-    while i < len(lines):
-        ln = lines[i]
-        if ln.startswith("## "):
-            heading_text = ln.lstrip("# ").strip()
-            add_heading(doc, heading_text, level=2)
-            i += 1
-            continue
-        if ln.startswith("|") and i + 1 < len(lines) and lines[i + 1].startswith("|") and set(lines[i + 1].replace("|", "").strip()) <= {"-", " "}:
-            header = [c.strip() for c in ln.strip("|").split("|")]
-            i += 2
-            data_rows = []
-            while i < len(lines) and lines[i].startswith("|"):
-                row = [c.strip() for c in lines[i].strip("|").split("|")]
-                data_rows.append(row)
-                i += 1
-            if data_rows:
-                add_table(doc, header, data_rows)
-            continue
-        if ln.startswith(">"):
-            add_paragraph(doc, ln.lstrip("> ").strip())
-        elif ln.strip().startswith("- "):
-            add_bullet(doc, ln.strip()[2:])
-        elif ln.strip():
-            add_paragraph(doc, ln.strip())
-        i += 1
+
+    week_names = get_recent_4_weeks(db_path, current_week)
+    active_weeks = [w for w in week_names if w]
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cur = conn.cursor()
+        if active_weeks:
+            placeholders = ",".join("?" * len(active_weeks))
+            query = f"""
+                SELECT week, COUNT(*), AVG(overall_score), AVG(ai_adoption), AVG(doc_quality)
+                FROM review_history
+                WHERE week IN ({placeholders})
+                GROUP BY week
+                ORDER BY week ASC
+                """
+            cur.execute(query, active_weeks)
+            rows = cur.fetchall()
+        else:
+            rows = []
+
+        if not rows:
+            add_paragraph(doc, "baseline 数据库中无本周相关历史数据，跳过趋势分析。")
+            return
+
+        all_weeks = []
+        for r in rows:
+            week_label, cnt, avg_score, avg_ai, avg_doc = r
+            all_weeks.append({
+                "week": week_label,
+                "count": cnt,
+                "avg_score": avg_score,
+                "avg_ai": avg_ai,
+                "avg_doc": avg_doc,
+            })
+
+        current_data = None
+        for w in all_weeks:
+            if w["week"] == current_week:
+                current_data = w
+                break
+
+        add_paragraph(doc, "### 整体指标趋势（最近 4 周）")
+
+        table_header = ["周次", "评审人数", "平均综合评分", "平均 AI 采纳率", "平均文档质量"]
+        table_rows = []
+        for w in all_weeks:
+            is_current = w["week"] == current_week
+            marker = " **📍**" if is_current else ""
+            table_rows.append([
+                f"{w['week']}{marker}",
+                str(w["count"]),
+                f"{w['avg_score']:.2f}" if w["avg_score"] is not None else "—",
+                f"{w['avg_ai']:.2%}" if w["avg_ai"] is not None else "—",
+                f"{w['avg_doc']:.2f}" if w["avg_doc"] is not None else "—",
+            ])
+
+        add_table(doc, table_header, table_rows)
+
+        if current_data and len(all_weeks) >= 2:
+            prev = all_weeks[-2]
+            delta_score = (current_data["avg_score"] or 0) - (prev["avg_score"] or 0)
+            sign = "+" if delta_score > 0 else ""
+            add_paragraph(
+                doc,
+                f"本周平均综合评分 {current_data['avg_score']:.2f}，"
+                f"较上周（{prev['week']}）{sign}{delta_score:.2f}。",
+            )
+
+        cur.execute("SELECT COUNT(DISTINCT week) FROM review_history")
+        total_weeks = cur.fetchone()[0]
+        add_paragraph(doc, f"基准库共记录 {total_weeks} 个周次的数据。")
+    finally:
+        conn.close()
 
 
 def chapter_conclusion(doc, overview):
@@ -449,6 +493,26 @@ def chapter_conclusion(doc, overview):
         add_bullet(doc, s)
 
 
+def get_recent_4_weeks(db_path: Path, current_week_name: str) -> list[str | None]:
+    """通过 weeks 表获取当前周往前推4周的周名称列表"""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT week_no FROM weeks WHERE week_name = ?", (current_week_name,))
+        row = cur.fetchone()
+        if not row:
+            return [None, None, None, None]
+        current_no = row[0]
+        week_nos = [current_no - i for i in range(4)]
+        cur.execute("SELECT week_no, week_name FROM weeks WHERE week_no IN ({})".format(
+            ",".join("?" * len(week_nos))
+        ), week_nos)
+        name_map = {r[0]: r[1] for r in cur.fetchall()}
+        return [name_map.get(no) for no in week_nos]
+    finally:
+        conn.close()
+
+
 def chapter_baseline_compare(doc, db_path, current_week, current_names):
     """第七章 全量比对（最近 4 次），从 SQLite 读取"""
     add_heading(doc, "第七章 全量比对（最近 4 次）", level=1)
@@ -461,26 +525,37 @@ def chapter_baseline_compare(doc, db_path, current_week, current_names):
         add_paragraph(doc, f"未找到 baseline 数据库: {db_path}")
         return
 
+    week_names = get_recent_4_weeks(db_path, current_week)
+    if not week_names or all(w is None for w in week_names):
+        add_paragraph(doc, "weeks 表中无当前周数据，请先运行 update_baseline.py 写入本周数据。")
+        return
+
     conn = sqlite3.connect(str(db_path))
     try:
         cur = conn.cursor()
         rows_data = []
         for name in current_names:
-            cur.execute(
-                """
-                SELECT week, overall_score
-                FROM review_history
-                WHERE name = ?
-                ORDER BY week DESC
-                LIMIT 4
-                """,
-                (name,),
-            )
+            placeholders = ",".join("?" * len([w for w in week_names if w]))
+            if placeholders:
+                query = f"""
+                    SELECT week, overall_score
+                    FROM review_history
+                    WHERE name = ? AND week IN ({placeholders})
+                    ORDER BY week ASC
+                    """
+                params = [name] + [w for w in week_names if w]
+            else:
+                query = """
+                    SELECT week, overall_score
+                    FROM review_history
+                    WHERE name = ? AND week = ?
+                    ORDER BY week ASC
+                    """
+                params = [name, current_week]
+            cur.execute(query, params)
             history = cur.fetchall()
-            scores = [s for _, s in history]
-            scores.reverse()
-            while len(scores) < 4:
-                scores.insert(0, None)
+            scores_map = {w: s for w, s in history}
+            scores = [scores_map.get(w) for w in week_names]
             first, last = (scores[0], scores[-1]) if scores and scores[0] is not None else (None, None)
             if first is None and last is None:
                 trend = TREND_NEW
@@ -504,6 +579,7 @@ def chapter_baseline_compare(doc, db_path, current_week, current_names):
 
         rows_data.sort(key=lambda r: (r["this_week"] is None, -(r["this_week"] or 0)))
 
+        col_labels = ["开发者"] + [f"W{week_names.index(w)+1}\n{w}" if w else f"W{i+1}" for i, w in enumerate(week_names)] + ["趋势", "平均"]
         rows = []
         for r in rows_data:
             score_cells = [f"{s:.2f}" if s is not None else "—" for s in r["scores"]]
@@ -513,18 +589,9 @@ def chapter_baseline_compare(doc, db_path, current_week, current_names):
                 r["trend"],
                 f"{r['avg']:.2f}" if r["avg"] is not None else "—",
             ])
-        add_table(
-            doc,
-            ["开发者", "第1次(最早)", "第2次", "第3次", "第4次(最新)", "趋势", "平均"],
-            rows,
-        )
+        add_table(doc, col_labels, rows)
 
-        cur.execute(
-            """
-            SELECT COUNT(DISTINCT name), COUNT(DISTINCT week)
-            FROM review_history
-            """
-        )
+        cur.execute("SELECT COUNT(DISTINCT name), COUNT(DISTINCT week) FROM review_history")
         total_devs, total_weeks = cur.fetchone()
         add_paragraph(
             doc,
@@ -542,7 +609,7 @@ def main():
     parser = argparse.ArgumentParser(description="生成 AI 辅助编程周报 DOCX")
     parser.add_argument("--json", required=True, help="review_results_*.json 路径")
     parser.add_argument("--excel", required=True, help="文档审查结果_*.xlsx 路径")
-    parser.add_argument("--trend-md", default=None, help="趋势分析_*.md 路径")
+    parser.add_argument("--trend-md", default=None, help="趋势分析_*.md 路径（已废弃，第六章从 SQLite 读，传入 /dev/null 跳过）")
     parser.add_argument("--missing-json", default=None, help="漏检结果 JSON 路径")
     parser.add_argument("--db", required=True, help="baseline.db 路径（第七章用）")
     parser.add_argument("--output", required=True, help="输出 docx 路径")
@@ -628,7 +695,7 @@ def main():
     chapter_improvements(doc, overview)
     chapter_gaps(doc, overview)
     chapter_missing_inline(doc, not_submitted, not_reviewed, total_members, actually_attended, reviewed_count)
-    chapter_full_compare(doc, trend_md)
+    chapter_full_compare(doc, db_path, week)
     chapter_conclusion(doc, overview)
     chapter_baseline_compare(doc, db_path, week, current_names)
 

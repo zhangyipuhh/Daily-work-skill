@@ -10,6 +10,30 @@ description: 当用户要求生成 AI 辅助编程周报、运行周审查、生
 本 Skill 驱动大模型（Agent 自身即评审者）端到端完成"AI 辅助编程周报"全流程。
 **核心原则：确定的事由脚本完成，需要判断的事由大模型完成。**
 
+## 刚性约束（违反即视为执行失败）
+
+1. **评审者名单唯一来源 = `D:\项目文档\AIAssistive\project_284_members.txt`**
+   - 即使目录中存在其他评审者配置（如 `script\checkCode\config\config.yaml` 的 `user_mapping`、其他名单文件、目录扫描到的人名子目录等），**一律以本清单为准**
+   - 不得用其他名单覆盖、补充或缩减排评审者范围
+   - 周目录里出现的非清单内开发者 → 视为"额外材料"，**不计入评审**
+   - 缺材料的清单内开发者 → 走漏检 → 补 0 分
+   - **人数随清单动态变化，不写死任何具体数字**
+
+2. **必须使用 subagent 并行评审（subagent-driven-development）**
+   - 主 Agent **不得**串行评审任何开发者文档
+   - 必须按 `batch_size = 5` 切批后，**对每个批次派发一个独立 subagent（Task 工具）并行执行**
+   - 批次总数 = ⌈len(actually_attended) / 5⌉，**不写死**
+   - 每个 subagent 必须按 `references/subagent_task_template.md` 填充后下发，**并将结果写入磁盘**（`tmp\batch_<week>_<idx>.json`）
+   - 即使某批次只有 1 人，也必须派发 subagent
+   - **禁止以任何理由绕过 subagent**，包括但不限于：
+     - "效率更高 / 更准确 / 更可控"
+     - "team plan 验证要求所有 dependent task 都有 verifier"
+     - "verifier 缺失 / 补 verifier 太麻烦"
+     - "节省时间 / 节省 token"
+     - "主 Agent 直接评审更稳"
+   - **如遇 team plan / verifier 等外部约束限制 subagent 派发**，**必须修改 plan 配置补充 verifier**，**而非**让主 Agent 串行评审或主 Agent 直接评审
+   - 任何"我直接开搞，自己跑评审"之类的输出**视为违反本约束**
+
 ## 触发条件
 
 当用户输入包含以下意图时，主 Agent 应加载本 Skill：
@@ -39,7 +63,7 @@ D:\项目文档\AIAssistive\aiweek\2026\05\0525-0531
 ## 9 步工作流
 
 ### Step 1 — 加载人名清单
-读取 `D:\项目文档\AIAssistive\project_284_members.txt`，得到 `set_should_attend`（40 人）。
+**刚性约束**：必须从 `D:\项目文档\AIAssistive\project_284_members.txt` 读取 `set_should_attend`（**人数随清单动态变化，不写死**）。**忽略所有其他人名来源**（如 `config.yaml` 的 `user_mapping`、其他名单文件、目录扫描的人名子目录等），以本清单为唯一真相。读取后建议打印 `set_should_attend` 前 5 人做 sanity check。
 
 ### Step 2 — 扫描周目录
 列出 `<input_path>/*/` 下所有子目录名，得到 `set_actually_attended`。
@@ -77,8 +101,8 @@ python scripts/check_missing.py \
 **不阻断流程**。漏检名单将传至 Step 8 嵌入报告第五章 5.x。
 
 ### Step 4 — 分批并行评审（核心）
-1. 把 `set_actually_attended` 按 `batch_size = 5` 切分（40 人 → 8 批）
-2. 对每个批次派发一个 subagent（Task 工具）**并行**执行
+1. 把 `set_actually_attended` 按 `batch_size = 5` 切分（**批次总数 = ⌈len(actually_attended) / 5⌉，不写死**）
+2. **刚性约束**：必须使用 subagent（Task 工具）派发，**禁止主 Agent 串行评审**（串行评审违反 subagent-driven-development 规范且丢失并发优势）。即使某批次只有 1 人，也必须派发 subagent。**禁止以任何理由绕过 subagent**（包括效率、team plan 验证约束、verifier 缺失等）
 3. **每个 subagent 任务必须按 `references/subagent_task_template.md` 填充后下发**：
    - 必填输入变量：`{{idx}}`、`{{week}}`、`{{names}}`、`{{input_path}}`、`{{output_path}}`
    - **刚性约束**：
@@ -100,13 +124,13 @@ python scripts/check_missing.py \
 7. 补执行：对缺失/失败的开发者重新派发 subagent（写入 `batch_<week>_<idx>_re<N>.json`）
 8. **合并批次 JSON**（脚本）：调用 `merge_review_results.py`：
    ```bash
-   python scripts/merge_review_results.py \
-     --input "D:\项目文档\AIAssistive\tmp\batch_<week>_1.json" \
-     --input "D:\项目文档\AIAssistive\tmp\batch_<week>_2.json" \
-     ... \
-     --input "D:\项目文档\AIAssistive\tmp\batch_<week>_8.json" \
-     --output "D:\项目文档\AIAssistive\output\review_results_<week>.json" \
-     --on-duplicate last
+    python scripts/merge_review_results.py \
+      --input "D:\项目文档\AIAssistive\tmp\batch_<week>_1.json" \
+      --input "D:\项目文档\AIAssistive\tmp\batch_<week>_2.json" \
+      ... \
+      --input "D:\项目文档\AIAssistive\tmp\batch_<week>_<N>.json" \
+      --output "D:\项目文档\AIAssistive\output\review_results_<week>.json" \
+      --on-duplicate last
    ```
    - 脚本按 `data.name` 合并所有批次（重名保留最后一个）
    - 内嵌格式验证，验证失败则返回码非 0
@@ -123,13 +147,16 @@ python scripts/check_missing.py \
 1. 主 Agent 检测到漏评审（情况 B）
 2. 自动派发新 subagent，**仅评审 not_reviewed 名单**（避免重复工作）
 3. 写 `tmp/batch_<week>_repair_<idx>.json`
-4. 调用 `merge_review_results.py` 合并到 review_results.json
-5. **回跑 Step 3** 验证 not_reviewed → 0
-6. **最多重试 2 轮**（避免无限循环），仍 > 0 则控制台报警
+4. subagent **内置自验证**（写盘后自动调用 validate_review_results.py，失败自动重试）
+5. 调用 `merge_review_results.py` 合并到 review_results.json
+6. **回跑 Step 3** 验证 not_reviewed → 0
+7. **最多重试 2 轮**（避免无限循环），仍 > 0 则控制台报警
 
 **为什么需要补件**：周目录有子目录说明开发者提交了材料，但模型评审时漏掉，强行 0 分不公正。必须重新评审。
 
-### Step 4.11 — 补 0 分（仅当 not_submitted > 0，V2.2 新增）
+**subagent 自验证**：补件 subagent 按 `subagent_task_template.md` 执行，写盘后自动验证格式，验证通过才返回。
+
+### Step 4.11 — 补 0 分（insufficient_data 或 not_submitted，V2.2 新增）
 
 **触发条件**：Step 4.10 完成后，再跑 Step 3 漏检，若 `not_submitted_count > 0`
 
@@ -143,6 +170,8 @@ python scripts/fill_zero_score.py \
 - 从 missing.json 读 `not_submitted` 字段（不读 `missing`，避免污染）
 - 给真未提交者补 0 分条目（含反模式命中、priority=high）
 - 已存在的同名记录**跳过**（不覆盖）
+
+**补充**：update_baseline.py 已修改为自动将 `insufficient_data` 条目填充为 0 分写入 baseline.db（无需额外处理）
 - 输出 review_results.json 原地覆盖
 
 **为什么是 0 分**：真未提交 = 完全没材料，应得 0 分。计入"有效评分人数"和平均分（拉低平均）。
@@ -167,21 +196,7 @@ python scripts/generate_excel.py \
 
 输出：`D:\项目文档\AIAssistive\output\文档审查结果_<week>.xlsx`
 
-### Step 7 — 全量历史对比（脚本）
-```bash
-python scripts/compare_history.py \
-  --current "D:\项目文档\AIAssistive\output\review_results_<week>.json" \
-  --history-dir "D:\项目文档\AIAssistive\output" \
-  --output "D:\项目文档\AIAssistive\output\趋势分析_<week>.md"
-```
-
-输出：`趋势分析_<week>.md`，包含：
-- 整体指标趋势表（所有历史周 vs 本周）
-- 开发者个体变化（与最近一次有数据的周对比）
-- 进步/退步/持平/新增汇总
-- 关键洞察
-
-### Step 7.5 — 更新 Baseline 基准库（脚本）[V2.1 新增]
+### Step 7 — 更新 Baseline 基准库（脚本）
 ```bash
 python scripts/update_baseline.py \
   --input "D:\项目文档\AIAssistive\output\review_results_<week>.json" \
@@ -192,7 +207,6 @@ python scripts/update_baseline.py \
 - 将本周评审结果写入 SQLite（`baseline.db`）
 - 同一 (week, name) 已存在则**覆盖**最新值
 - 打印：新增 N 条、覆盖 M 条、跳过 K 条
-- **必须**在 Step 8 DOCX 生成前跑完
 - 数据库不存在时自动初始化（含 review_history 表 + 索引）
 
 数据库结构详见 `references/baseline_readme.md`。
@@ -202,12 +216,13 @@ python scripts/update_baseline.py \
 python scripts/generate_report.py \
   --json "D:\项目文档\AIAssistive\output\review_results_<week>.json" \
   --excel "D:\项目文档\AIAssistive\output\文档审查结果_<week>.xlsx" \
-  --trend-md "D:\项目文档\AIAssistive\output\趋势分析_<week>.md" \
   --missing-json "D:\项目文档\AIAssistive\output\missing_<week>.json" \
   --db "D:\项目文档\AIAssistive\baseline\baseline.db" \
   --output "D:\项目文档\AIAssistive\output\AI辅助编程报告_<week>.docx" \
   --week "<week>"
 ```
+
+> `--trend-md` 已废弃（第六章趋势分析现从 baseline.db 读取），传入 `/dev/null` 即可。
 
 报告章节（**7 + 1 模型**，严格匹配 `references/report_format_spec.md`）：
 - 标题 + 副标题（居中）
@@ -247,8 +262,7 @@ python scripts/generate_report.py \
   - `merge_review_results.py` — 多批次合并（Step 4.8）
   - `fill_zero_score.py` — 真未提交补 0 分（Step 4.11）
   - `generate_excel.py` — JSON → Excel
-  - `compare_history.py` — 全量历史对比
-  - `update_baseline.py` — Baseline 维护（Step 7.5，SQLite 写入）
+  - `update_baseline.py` — Baseline 维护（Step 7，SQLite 写入）
   - `generate_report.py` — 生成最终 DOCX
 
 ## 错误处理
@@ -270,7 +284,10 @@ python scripts/generate_report.py \
 
 - ✅ **确定的事由脚本完成**：漏检检测、格式验证、Excel 生成、对比、DOCX 排版
 - ✅ **判断的事由模型完成**：文档质量评审、AI 痕迹识别、洞察生成
-- ✅ **并行提速**：评审步骤按 5 人/批派发 8 个 subagent 并行
+- ✅ **并行提速**：评审步骤按 5 人/批切分后派发 ⌈N/5⌉ 个 subagent 并行执行
 - ✅ **可复现**：所有机械步骤封装为可独立运行的 Python 脚本
 - ✅ **可观测**：每个产物落盘到 `output/`，控制台打印关键路径
 - ✅ **可验证**：每批评审输出和最终合并 JSON 都要经过格式验证脚本
+- ✅ **评审者名单唯一**：始终以 `project_284_members.txt` 为准，目录内其他配置不参与名单决策（人数动态，不写死）
+- ✅ **subagent 强制**：评审阶段必须派发 subagent 并行执行，主 Agent 仅负责调度/合并/验证
+- ✅ **subagent 不可绕过**：禁止以效率/team plan 验证约束/verifier 缺失/节省时间等任何理由让主 Agent 串行评审或主 Agent 直接评审

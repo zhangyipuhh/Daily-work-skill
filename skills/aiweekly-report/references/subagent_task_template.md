@@ -15,6 +15,7 @@
 | `{{input_path}}` | 周目录绝对路径 | `D:\项目文档\AIAssistive\aiweek\2026\05\0525-0531` |
 | `{{output_path}}` | 必填输出文件路径 | `D:\项目文档\AIAssistive\tmp\batch_0525-0531_3.json` |
 | `{{tmp_dir}}` | 临时目录路径 | `D:\项目文档\AIAssistive\tmp` |
+| `{{scripts_dir}}` | 验证脚本目录 | `D:\项目文档\AIAssistive\ai\skills\aiweekly-report\scripts` |
 
 ---
 
@@ -37,13 +38,16 @@
    - 读取 {{input_path}}/<开发者姓名>/*.md 文档内容
    - 按评审模板输出结构化 JSON
 3. 收集本批次所有 JSON，组成一个 JSON 数组
-4. **关键步骤 — 写入文件**：
+4. **写入文件**：
    - 输出路径（必填）：{{output_path}}
    - 格式：JSON 数组 `[{...}, {...}, ...]`
    - 编码：UTF-8
    - 缩进：2 空格
    - ensure_ascii=False（保留中文）
-5. 写盘完成后**必须回显**：`SAVED: {{output_path}}`
+5. **写盘后自验证**：
+   - 调用 `python {{scripts_dir}}/validate_review_results.py --input {{output_path}}`
+   - 验证失败则修正后重写，直到通过
+6. **验证通过后必须回显**：`PASSED: {{output_path}}`
 
 ## 输出约束（刚性）
 - 必须把结果写入磁盘文件 {{output_path}}
@@ -80,14 +84,42 @@ for idx, batch_start in enumerate(range(0, len(actually_attended), batch_size), 
 
 ---
 
-## 验证步骤
+## 写盘后自验证（刚性步骤）
 
-subagent 完成后，主 Agent 验证：
-1. 检查文件 `{{output_path}}` 是否存在
-2. 读取并解析为 JSON 数组
-3. 数组长度应等于 `{{names}}` 列表长度
-4. （可选）调用 `validate_review_results.py --input <batch_file>` 做格式验证
-5. 验证通过后进入下一批或进入 Step 4.8 合并
+subagent 写盘后**必须**执行以下验证流程：
+
+1. **立即调用验证脚本**：
+   ```
+   python {{scripts_dir}}/validate_review_results.py --input {{output_path}}
+   ```
+2. **验证失败时**（返回码 ≠ 0）：
+   - 检查 JSON 解析是否成功
+   - 修正格式问题（字段缺失、类型错误）
+   - 重新写入文件
+   - 重新验证，直到通过
+3. **验证通过后必须回显**：`PASSED: {{output_path}}`
+4. **验证通过后才算任务成功**，方可返回结果
+
+> 注意：`{{scripts_dir}}` = `D:\项目文档\AIAssistive\ai\skills\aiweekly-report\scripts`
+
+---
+
+## 验证失败重试示例
+
+```
+写盘 → 验证失败 → 修正格式 → 重写 → 验证通过 → 返回 PASSED
+```
+
+如果某批次反复验证失败超过 3 次，回显错误并退出，让主 Agent 决定处理方式。
+
+---
+
+## 验证通过标准
+
+- JSON 可解析为数组
+- 每个元素包含 `name` 字段
+- 关键字段存在：`overall_score`、`document_quality`、`ai_adoption_rate`、`anti_patterns`、`improvement_suggestions`
+- `overall_score` 为数字（或 `insufficient_data=true`）
 
 ---
 

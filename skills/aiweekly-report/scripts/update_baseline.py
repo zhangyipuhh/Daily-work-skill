@@ -40,6 +40,15 @@ CREATE TABLE IF NOT EXISTS review_history (
 
 CREATE INDEX IF NOT EXISTS idx_name ON review_history(name);
 CREATE INDEX IF NOT EXISTS idx_week ON review_history(week);
+
+CREATE TABLE IF NOT EXISTS weeks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  week_no INTEGER NOT NULL UNIQUE,
+  week_name TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_week_no ON weeks(week_no);
 """
 
 
@@ -89,9 +98,15 @@ def extract_record(item: dict, week: str, ts: str) -> dict | None:
     name = data.get("name") or item.get("name")
     if not name:
         return None
-    overall = to_float(safe_get(data, "overall_score"))
-    if overall is None:
-        return None
+
+    # insufficient_data → 强制 0 分，确保 baseline 覆盖全员
+    if item.get("insufficient_data") or data.get("insufficient_data"):
+        overall = 0.0
+    else:
+        overall = to_float(safe_get(data, "overall_score"))
+        if overall is None:
+            return None  # 正常条目无分数才跳过
+
     return {
         "week": week,
         "name": str(name).strip(),
@@ -158,26 +173,46 @@ def upsert_records(db_path: Path, records: list[dict]) -> tuple[int, int]:
     return inserted, replaced
 
 
+def upsert_week(db_path: Path, week_name: str, ts: str) -> tuple[bool, int]:
+    """写入 weeks 表，返回 (是否新插入, week_no)
+    若 week_name 已存在则跳过，返回 (False, 现有week_no)
+    """
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT week_no FROM weeks WHERE week_name = ?", (week_name,))
+        row = cur.fetchone()
+        if row:
+            conn.close()
+            return False, row[0]
+        cur.execute("SELECT COALESCE(MAX(week_no), 0) FROM weeks")
+        max_no = cur.fetchone()[0] or 0
+        new_no = max_no + 1
+        cur.execute(
+            "INSERT INTO weeks (week_no, week_name, created_at) VALUES (?, ?, ?)",
+            (new_no, week_name, ts),
+        )
+        conn.commit()
+        return True, new_no
+    finally:
+        conn.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Baseline 基准库更新（SQLite）")
     parser.add_argument("--input", required=True, help="review_results_*.json 路径")
     parser.add_argument("--db", required=True, help="baseline.db 输出路径")
-    parser.add_argument("--week", default=None, help="周次标签（默认从文件名提取，如 0525-0531）")
+    parser.add_argument("--week-name", required=True, help="周名称（如 0525-0531）")
+    parser.add_argument("--week", dest="legacy_week", default=None, help="已废弃，请使用 --week-name")
     args = parser.parse_args()
 
     input_path = Path(args.input)
     db_path = Path(args.db)
+    week_name = args.week_name
 
     if not input_path.exists():
         print(f"[ERROR] 输入文件不存在: {input_path}", file=sys.stderr)
         return 2
-
-    if args.week:
-        week = args.week
-    else:
-        stem = input_path.stem
-        parts = stem.replace("review_results_", "").split("_")
-        week = parts[0] if parts else stem
 
     try:
         data = json.loads(input_path.read_text(encoding="utf-8"))
@@ -190,21 +225,25 @@ def main() -> int:
         return 2
 
     ts = datetime.now().isoformat(timespec="seconds")
+
+    init_db(db_path)
+    is_new, week_no = upsert_week(db_path, week_name, ts)
+
     records = []
     skipped = 0
     for item in data:
-        rec = extract_record(item, week, ts)
+        rec = extract_record(item, week_name, ts)
         if rec is None:
             skipped += 1
         else:
             records.append(rec)
 
-    init_db(db_path)
     inserted, replaced = upsert_records(db_path, records)
 
     print(f"[OK] Baseline 更新完成")
     print(f"     数据库: {db_path}")
-    print(f"     周次:   {week}")
+    print(f"     周名称: {week_name} (第 {week_no} 周)")
+    print(f"     周序号: {'新插入' if is_new else '已存在'}")
     print(f"     新增:   {inserted} 条")
     print(f"     覆盖:   {replaced} 条")
     print(f"     跳过:   {skipped} 条（无 overall_score 或缺 name）")
