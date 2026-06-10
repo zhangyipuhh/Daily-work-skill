@@ -1,0 +1,15 @@
+# project-doc-query skill 必需依赖
+# 通过 scripts/check_env.py 自动检查与安装
+# 缺失任意一项时，DocumentLoader / 各 Loader 将无法 import 对应文件类型
+
+# .xlsx / .xlsm 支持
+openpyxl>=3.1.0
+
+# .docx / .doc 支持
+python-docx>=1.1.0
+
+# .pdf 支持（含扫描件检测）
+pypdf>=4.0.0
+
+# .txt / .csv 编码自动检测
+chardet>=5.0.0
