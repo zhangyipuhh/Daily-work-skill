@@ -6,12 +6,13 @@ check_env.py
 project-doc-write skill 启动时环境自检：
 1. 检查 Python 版本（>= 3.10）
 2. 检查 4 个必需依赖（openpyxl / python-docx / pypdf / chardet）
-3. 缺库时自动 pip install（仅当前 Python 解释器，不强制 conda）
+3. 检查 1 个软依赖（langchain-core）：缺时仅警告不报错
+4. 缺必需库时自动 pip install（仅当前 Python 解释器，不强制 conda）
 
 退出码：
-  0 - 全部就绪
+  0 - 全部就绪（或仅软依赖缺失，警告但通过）
   1 - 缺 Python
-  2 - 缺库且自动安装失败
+  2 - 缺必需库且自动安装失败
   3 - 缺 requirements.txt
 
 Usage:
@@ -31,6 +32,10 @@ REQUIRED_LIBS = {
     "docx": "python-docx>=1.1.0",
     "pypdf": "pypdf>=4.0.0",
     "chardet": "chardet>=5.0.0",
+}
+
+SOFT_LIBS = {
+    "langchain_core": "langchain-core>=0.3.0",
 }
 
 MIN_PY = (3, 10)
@@ -54,6 +59,17 @@ def check_libs() -> list:
         else:
             print(f"[OK] {import_name}")
     return missing
+
+
+def check_soft_libs() -> list:
+    missing_soft = []
+    for import_name in SOFT_LIBS:
+        if importlib.util.find_spec(import_name) is None:
+            missing_soft.append(import_name)
+            print(f"[WARN] {import_name} (软依赖，缺失将退化为 _SimpleDoc 替身)")
+        else:
+            print(f"[OK] {import_name}")
+    return missing_soft
 
 
 def install_libs(missing: list) -> bool:
@@ -95,27 +111,36 @@ def main() -> int:
         return 1
 
     missing = check_libs()
-    if not missing:
-        print(f"\n[OK] 环境就绪（{len(REQUIRED_LIBS)}/{len(REQUIRED_LIBS)} 库）")
-        return 0
-
-    if not REQUIREMENTS.exists():
+    if missing and not REQUIREMENTS.exists():
         print(f"\n[FAIL] 缺 requirements.txt: {REQUIREMENTS}")
         return 3
 
-    if not install_libs(missing):
+    if missing and not install_libs(missing):
         print(f"\n请手动执行以下命令后再试：")
         print(f"  {sys.executable} -m pip install -r \"{REQUIREMENTS}\"")
         return 2
 
-    print("\n[INFO] 重新验证...")
-    still_missing = check_libs()
-    if still_missing:
-        print(f"\n[FAIL] 安装后仍有缺失: {still_missing}")
-        print(f"请手动执行: {sys.executable} -m pip install -r \"{REQUIREMENTS}\"")
-        return 2
+    if missing:
+        print("\n[INFO] 重新验证...")
+        still_missing = check_libs()
+        if still_missing:
+            print(f"\n[FAIL] 安装后仍有缺失: {still_missing}")
+            print(f"请手动执行: {sys.executable} -m pip install -r \"{REQUIREMENTS}\"")
+            return 2
 
-    print(f"\n[OK] 环境就绪（{len(REQUIRED_LIBS)}/{len(REQUIRED_LIBS)} 库）")
+    print()
+    missing_soft = check_soft_libs()
+    if missing_soft:
+        print(f"\n[INFO] 软依赖缺失 {len(missing_soft)} 个，不影响功能但建议安装：")
+        for name in missing_soft:
+            print(f"  {sys.executable} -m pip install {SOFT_LIBS[name]}")
+
+    total_req = len(REQUIRED_LIBS)
+    ok_count = total_req - len(missing) if not missing else total_req
+    if missing_soft:
+        print(f"\n[OK] 环境就绪（{ok_count}/{total_req} 必需库，{len(SOFT_LIBS) - len(missing_soft)}/{len(SOFT_LIBS)} 软依赖）")
+    else:
+        print(f"\n[OK] 环境就绪（{ok_count}/{total_req} 必需库，{len(SOFT_LIBS)}/{len(SOFT_LIBS)} 软依赖）")
     return 0
 
 

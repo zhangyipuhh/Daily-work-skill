@@ -1,15 +1,19 @@
 # project-doc-write skill 必需依赖
 # 通过 scripts/check_env.py 自动检查与安装
-# 缺失任意一项时，DocumentLoader / 各 Loader 将无法 import 对应文件类型
+# 缺失任意"必需"项时，DocumentLoader / 各 Loader 将无法 import 对应文件类型
 
-# .xlsx / .xlsm 支持
+# .xlsx / .xlsm 支持（必需）
 openpyxl>=3.1.0
 
-# .docx / .doc 支持
+# .docx / .doc 支持（必需）
 python-docx>=1.1.0
 
-# .pdf 支持（含扫描件检测）
+# .pdf 支持（含扫描件检测）（必需）
 pypdf>=4.0.0
 
-# .txt / .csv 编码自动检测
+# .txt / .csv 编码自动检测（必需）
 chardet>=5.0.0
+
+# langchain_core（软必需：缺时 DocumentLoader 退化为 _SimpleDoc 替身，仍可工作）
+# 提供则使用 langchain Document 类型，缺失时仅控制台提示一行警告
+langchain-core>=0.3.0
