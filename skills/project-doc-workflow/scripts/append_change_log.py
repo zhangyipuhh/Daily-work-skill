@@ -19,6 +19,12 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
+# 绕开 Windows PowerShell 5.1 GBK 默认编码
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 
 CHANGE_LOG_PATH_TEMPLATE = "06_变更及暂停/变更记录.md"
 
@@ -76,7 +82,7 @@ def main() -> int:
 
     project_root = Path(args.project_root)
     if not project_root.exists():
-        print(f"❌ 项目根目录不存在: {project_root}")
+        print(f"[ERR] 项目根目录不存在: {project_root}")
         return 1
 
     log_path = ensure_change_log(project_root)
@@ -94,8 +100,8 @@ def main() -> int:
         operator=args.operator,
     )
 
-    print(f"✅ 已追加变更记录 → {log_path}")
-    print(f"   {today} | {project_id} | {args.change_type} | {doc_name}")
+    print(f"[OK] 已追加变更记录 -> {log_path}")
+    print(f"     {today} | {project_id} | {args.change_type} | {doc_name}")
     return 0
 
 

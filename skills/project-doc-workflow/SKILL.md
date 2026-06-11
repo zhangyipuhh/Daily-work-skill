@@ -5,6 +5,22 @@ description: Use when generating a software-engineering project deliverable end-
 
 # Project Doc Workflow（端到端工作流）
 
+## ⚠️ 强约束: 不瞎编 (NO FABRICATION)
+
+**本 skill 严禁**在执行过程中**任何**环节编造：
+- 人名 / 日期 / 数字 / 工具名 / 角色签名表 / 文档状态 / 框架标签
+
+**遇到证据缺失**：
+1. 立即调 `../intent-clarification/` 走对应维度
+2. 用户回答"待定" → 重新问"停止 / 提供详细信息"
+3. 用户没指定 → **不写**，**不擅自填默认值**
+
+**严禁**"写占位后续补"：
+- ❌ `| XX | — |` / `| XX | TBD |` / `| XX | 待定 |` 单独使用
+- ✅ `| XX | **待补**：<字段名> |` 必带说明
+
+详见 `../intent-clarification/references/no_fabrication.md`。
+
 > **阶段定位**：V1 基础能力版。
 
 ## 概述
@@ -28,7 +44,8 @@ description: Use when generating a software-engineering project deliverable end-
 ```
 ┌────────────────────────────────────────┐
 │  Step 1  project-doc-hub（受理 + 澄清）   │
-│  - 澄清项目根目录 + 文档类型 + 意图      │
+│  - 调 intent-clarification 走 intent 维度 │
+│  - 取项目根目录 + 文档类型 + 意图        │
 │  - 多项目时让用户选择                    │
 └────────────────────────────────────────┘
                   ↓
@@ -41,16 +58,19 @@ description: Use when generating a software-engineering project deliverable end-
                   ↓
 ┌────────────────────────────────────────┐
 │  Step 3  project-doc-outline（生成大纲）  │
+│  - 调 intent-clarification 走 environment 维度 │
 │  - 按文档类型选 reference 模板           │
 │  - 输出"章节级"大纲（不含正文）          │
 └────────────────────────────────────────┘
                   ↓
 ┌────────────────────────────────────────┐
 │  Step 4  project-doc-write（填充 + 决策）  │
+│  - 调 intent-clarification 走 data/document_attr 维度 │
 │  - 严格基于项目已有资料填充正文          │
 │  - 缺资料时主动询问用户                  │
 │  - 生成"决策与意见"（带【框架】标签）     │
 │  - 追加变更记录                          │
+│  - 调 manage_project_log.py append-operation 写主日志 │
 │  - 输出到项目目录 + 中间稿               │
 └────────────────────────────────────────┘
 ```
@@ -87,9 +107,14 @@ description: Use when generating a software-engineering project deliverable end-
    □ 4.3 缺资料时主动询问用户（不擅自编造）
    □ 4.4 生成"决策与意见"章节（带【框架】+【强度】+【数据源】）
    □ 4.5 自检严禁虚构红线清单
-   □ 4.6 追加变更记录到 <项目根>/06_变更及暂停/变更记录.md
-   □ 4.7 输出最终文档到项目目录
-   □ 4.8 输出中间稿到 AIAssistive\output\
+   □ 4.6 内容净化自检（去"评审稿/—占位/编制审核"等废话，详见 write/references/文档内容_净化规则.md）
+   □ 4.7 追加变更记录到 <项目根>/06_变更及暂停/变更记录.md
+   □ 4.8 输出最终文档到项目目录（.md + .docx）
+        ├─ 4.8.1 落 .md 到项目目录
+        ├─ 4.8.2 【调 word skill 转 .docx】—— 模型自检当前 skill 库是否有"操作 word 的 skill"（docx-skill / word-skill / docx-generator 等）
+        │        ├─ 存在 → 调该 skill 转 .docx
+        │        └─ 不存在 → 提示用户安装 docx-skill，仅落 .md
+        ├─ 4.8.3 落中间稿到 AIAssistive\output\
    □ 4.9 汇报产物路径
 ```
 

@@ -5,7 +5,61 @@ description: Use when the user asks questions about a software-engineering proje
 
 # Project Doc Query（查询 / 咨询）
 
+## ⚠️ 强约束: 不瞎编 (NO FABRICATION)
+
+**本 skill 严禁**在执行过程中**任何**环节编造：
+- 人名 / 日期 / 数字 / 工具名 / 角色签名表 / 文档状态 / 框架标签
+
+**遇到证据缺失**：
+1. 立即调 `../intent-clarification/` 走对应维度
+2. 用户回答"待定" → 重新问"停止 / 提供详细信息"
+3. 用户没指定 → **不写**，**不擅自填默认值**
+
+**严禁**"写占位后续补"：
+- ❌ `| XX | — |` / `| XX | TBD |` / `| XX | 待定 |` 单独使用
+- ✅ `| XX | **待补**：<字段名> |` 必带说明
+
+详见 `../intent-clarification/references/no_fabrication.md`。
+
 > **阶段定位**：本 skill 当前为 **V1 基础能力版**，未来会扩展到项目集/敏捷/量化管理。
+
+---
+
+## ⚠️ 反模式红线（写代码前先看 · 2026-06-11 强化）
+
+**禁止**在 `python -c "..."` 或任何 Python 代码中使用：
+
+- ❌ `from DocumentLoader import DocumentLoader, ExcelLoader, ...`
+- ❌ `from loader.ExcelLoader import ExcelLoader` / `from loader.WordLoader import WordLoader` 等
+- ❌ `import openpyxl` / `from openpyxl import load_workbook` 直接读 xlsm/xlsx
+- ❌ `from docx import Document` 直接读 docx
+- ❌ `from pypdf import PdfReader` 直接读 pdf
+- ❌ `import csv` / `import json` / `import email` 直接读 csv/json/eml
+
+**必须**改为调用本 skill `scripts/` 下的 CLI 脚本：
+
+| 场景 | CLI |
+|---|---|
+| 读任意文件 | `python scripts/read_doc.py --file <path> [--sheet ...] [--keyword ...]` |
+| 找最新版策划表 | `python scripts/find_planning_sheet.py --project-root <path>` |
+| 扫项目目录 | `python scripts/scan_project_root.py --project-root <path> [--subdir ...] [--ext ...]` |
+| 输出项目根常用路径 | `python scripts/dump_paths.py --project-root <path> --format ps1` |
+
+`read_doc.py` 自动按扩展名分发到对应 Loader，支持全部 8 种格式：xlsx/xlsm/docx/doc/pdf/txt/md/csv/json/eml。
+
+### 快捷入口（避免你写临时脚本）
+
+| 痛点 | 解决方案 |
+|---|---|
+| PowerShell 引号转义麻烦、路径太长 | 用 `dump_paths.py` 生成 `$VAR="..."`，`. (ps1)` 加载后用变量 |
+| PowerShell 5.1 GBK 编码乱码 | `read_doc.py --output-file PATH` 写到文件，绕开控制台 |
+| 想用 `\| Select-Object -First N` 截断 | `read_doc.py --max-rows N`（内置） |
+| 想用 `\| Where-Object` 过滤 | `read_doc.py --keyword xxx`（page_content 维度过滤） |
+| 想在 Python 里继续处理读出的内容 | `read_doc.py --output json --output-file PATH` 后用 LLM 读 JSON |
+
+**违反此约束的代码视为反模式**，应重写为调用 CLI 脚本。
+
+---
 
 ## 概述
 
@@ -25,14 +79,14 @@ description: Use when the user asks questions about a software-engineering proje
 
 ## 刚性约束
 
-1. **意图澄清优先**：先问"您问的是事实/数据，还是辅助决策？"，不要直接给"应该/建议"。
+1. **澄清必走 intent-clarification**：本 skill 启动时**必须**调 `intent-clarification` skill（详见 references/intent.md）。**禁止**在 SKILL.md 内联问"事实/决策"或"项目根"。
 2. **强制框架标签**：每条回答首行输出 `【框架：{PMP|PRINCE2|系统分析师} · {框架层|落地层|实务层}】`。
 3. **证据可追溯**：所有事实类回答必须附"项目证据"——策划表子标签名 + 文档路径 + 行/单元格。
 4. **三层框架叠加**（互不冲突）：
    - **PMP 框架层**：5 过程组 / 10 知识领域（给"管理体系全景"）
    - **PRINCE2 落地层**：7 原则 / 7 主题 / 7 流程（给"具体怎么做"）
    - **系统分析师 实务层**：5 大模块（系统规划/需求分析/系统设计/测试与维护/信息化）（给"软件工程实际"）
-5. **严禁虚构**：回答中所有数字、日期、人名必须来自项目资料；缺资料时**主动询问**用户。
+5. **严禁虚构**：回答中所有数字、日期、人名必须来自项目资料；缺资料时调 `intent-clarification` 走 data 维度。
 
 ---
 
@@ -59,14 +113,18 @@ python scripts/check_env.py
 ## 核心流程
 
 ```
-Step 1  澄清用户意图（事实/数据 vs 决策）
+Step 1  调 intent-clarification skill（澄清意图 + 项目根 + 范围）
+   ├─ 5 个子项见 references/intent.md
+   └─ 必要时流程中再问（澄清可重入）
    ↓
 Step 2  按目录规则加载项目资料（DocumentLoader）
    ↓
 Step 3  若事实/数据：直接给数据 + 证据
-        若决策：选框架 → 引用框架速查表 → 给建议（带项目证据）
+         若决策：选框架 → 引用框架速查表 → 给建议（带项目证据）
    ↓
 Step 4  标注框架标签 + 数据来源
+   ↓
+Step 5  调 manage_project_log.py append-operation 写主日志
 ```
 
 ---
@@ -97,12 +155,51 @@ Step 4  标注框架标签 + 数据来源
 
 ## 资源引用
 
-- 意图澄清提问模板：`references/澄清问题_模板.md`
+- 流程澄清（intent 5 子项，由 intent-clarification 调度）：`references/intent.md`
 - 框架速查表：`references/framework_pmp_速查.md`、`references/framework_prince2_速查.md`、`references/framework_系统分析师_速查.md`
 - 框架选用决策树：`references/框架选用决策树.md`
 - 策划表字段速查：`references/策划表_字段速查.md`
 - 文档类型目录速查：`references/文档类型_目录速查.md`
 - 评审计划提取方法：`references/评审计划_提取方法.md`
+- CLI 脚本使用速查（参数表 + 典型用例 + 排错）：`references/cli_脚本使用速查.md`
+- 元说明（套件内各 skill 介绍）：`../project-doc-overview/SKILL.md`
+- 统一澄清协议：`../intent-clarification/SKILL.md`
+
+---
+
+## ⚠️ 反模式红线（写代码前先看 · 2026-06-11 强化）
+
+**禁止**在 `python -c "..."` 或任何 Python 代码中使用：
+
+- ❌ `from DocumentLoader import DocumentLoader, ExcelLoader, ...`
+- ❌ `from loader.ExcelLoader import ExcelLoader` / `from loader.WordLoader import WordLoader` 等
+- ❌ `import openpyxl` / `from openpyxl import load_workbook` 直接读 xlsm/xlsx
+- ❌ `from docx import Document` 直接读 docx
+- ❌ `from pypdf import PdfReader` 直接读 pdf
+- ❌ `import csv` / `import json` / `import email` 直接读 csv/json/eml
+
+**必须**改为调用本 skill `scripts/` 下的 CLI 脚本：
+
+| 场景 | CLI |
+|---|---|
+| 读任意文件 | `python scripts/read_doc.py --file <path> [--sheet ...] [--keyword ...]` |
+| 找最新版策划表 | `python scripts/find_planning_sheet.py --project-root <path>` |
+| 扫项目目录 | `python scripts/scan_project_root.py --project-root <path> [--subdir ...] [--ext ...]` |
+| 输出项目根常用路径 | `python scripts/dump_paths.py --project-root <path> --format ps1` |
+
+`read_doc.py` 自动按扩展名分发到对应 Loader，支持全部 8 种格式：xlsx/xlsm/docx/doc/pdf/txt/md/csv/json/eml。
+
+### 快捷入口（避免你写临时脚本）
+
+| 痛点 | 解决方案 |
+|---|---|
+| PowerShell 引号转义麻烦、路径太长 | 用 `dump_paths.py` 生成 `$VAR="..."`，`. (ps1)` 加载后用变量 |
+| PowerShell 5.1 GBK 编码乱码 | `read_doc.py --output-file PATH` 写到文件，绕开控制台 |
+| 想用 `\| Select-Object -First N` 截断 | `read_doc.py --max-rows N`（内置） |
+| 想用 `\| Where-Object` 过滤 | `read_doc.py --keyword xxx`（page_content 维度过滤） |
+| 想在 Python 里继续处理读出的内容 | `read_doc.py --output json --output-file PATH` 后用 LLM 读 JSON |
+
+**违反此约束的代码视为反模式**，应重写为调用 CLI 脚本。
 
 ---
 

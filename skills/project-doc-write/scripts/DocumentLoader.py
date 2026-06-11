@@ -58,8 +58,8 @@ LOADER_DEFAULT_KWARGS: Dict[str, Dict[str, Any]] = {
     '.csv': {'encoding': 'utf-8'},
     '.json': {'jq_schema': '.[]', 'text_content': False},
     '.eml': {'prefer_encoding': 'utf-8'},
-    '.xlsx': {'data_only': True, 'include_hidden': False},
-    '.xlsm': {'data_only': True, 'include_hidden': False},
+    '.xlsx': {'data_only': True, 'include_hidden': False, 'sheet_name': None, 'keyword': None, 'row_range': None},
+    '.xlsm': {'data_only': True, 'include_hidden': False, 'sheet_name': None, 'keyword': None, 'row_range': None},
 }
 
 

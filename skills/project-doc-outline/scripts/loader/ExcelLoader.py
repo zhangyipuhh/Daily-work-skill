@@ -1,9 +1,9 @@
 #!/usr/bin/python
 # -*- coding:utf-8 -*-
 """
-ExcelLoader 模块（project-doc-write skill 自带）
+ExcelLoader 模块（project-doc-outline skill 自带）
 
-Date: 2026-06-10
+Date: 2026-06-11
 Author: project-doc skill 套件
 """
 

@@ -57,12 +57,31 @@ Step 5  汇报产物路径
 
 ---
 
-## 强制澄清项（与用户对话前必问）
+## 强制澄清项（与用户对话前必走 intent-clarification）
 
-1. **项目根目录**（`D:\项目文档\` 下的具体项目文件夹）
-2. **目标文档类型**（10 类之一，详见 project-doc-outline/references）
-3. **意图**：查询 / 生成 / 更新 / 删除
-4. **决策类问题需澄清**：是事实查询还是要决策建议（详见 project-doc-query/references/澄清问题_模板.md）
+**禁止**在 hub SKILL.md 内联问。**必须**调 `intent-clarification` skill（详见 `../intent-clarification/SKILL.md` + `../project-doc-query/references/intent.md`）。
+
+### Step 0: 场景分流（必走 · 第一步）
+
+**用户问题进来第一件事**：识别场景类型。
+
+| 场景 | 用户话术特征 | 必走的询问维度 |
+|---|---|---|
+| `A0.technical_doc` | "写 XX 方案/设计/测试/部署/培训" | A.intent (doc_type) + C.environment (10 个技术点) |
+| `A0.administrative` | "变更记录/周报/纪要" | A.intent (doc_type) + D.document_attr |
+| `A0.factual_query` | "什么时候/谁/多少/在哪" | A.intent (fact/decision) |
+| `A0.advisory` | "建议/应该/哪种/怎么选" | A.intent (decision) + 三层框架 |
+
+**关键**：技术文档场景必须问技术细节（10 个 C.environment 技术点），不能跳过。
+
+### Step 1: 5 个 intent 维度子项
+
+澄清项共 5 个子项（intent 维度）：
+1. 事实/决策（intent_fact_or_decision）
+2. 范围（scope_project_or_industry）
+3. 项目根目录（project_root）
+4. 目标文档类型（doc_type）
+5. 意图（action_intent：查询 / 生成 / 更新 / 删除）
 
 ---
 
@@ -93,6 +112,23 @@ Step 5  汇报产物路径
 - 文档加载器（每个使用 skill 自带，无 shared 共享包，**所有 .py 都在 `scripts/` 下**）：
   - 查/咨询类走 `../project-doc-query/scripts/DocumentLoader.py`
   - 写/生成类走 `../project-doc-write/scripts/DocumentLoader.py`
+  - 大纲类走 `../project-doc-outline/scripts/DocumentLoader.py`
 - 8 个 Loader 子包（与 DocumentLoader 同 skill 配套，全部在 `scripts/loader/` 下）：
   - `../project-doc-query/scripts/loader/` 包含 `WordLoader / PDFLoader / TextLoader / MarkdownLoader / CSVLoader / JSONLoader / EmlLoader / ExcelLoader`
   - `../project-doc-write/scripts/loader/` 同上
+  - `../project-doc-outline/scripts/loader/` 同上
+- 子 skill 脚本使用速查（参数表 + 典型用例 + 排错 + 反模式对照）：
+  - 查询类：`../project-doc-query/references/cli_脚本使用速查.md`
+  - 写文档类：`../project-doc-write/references/cli_脚本使用速查.md`
+  - 大纲类：`../project-doc-outline/references/cli_脚本使用速查.md`
+  - 端到端工作流：`../project-doc-workflow/references/cli_脚本使用速查.md`
+- write skill 内容规则：
+  - word 格式范本（封面/字体/行间距/页眉页脚/目录 写死版）：`../project-doc-write/references/word_格式范本_规则.md`
+  - word 落盘流程（含 docx-skill 自检）：`../project-doc-write/references/word_落盘_流程.md`
+  - 文档内容净化规则（去"评审稿/—占位/编制审核"等废话）：`../project-doc-write/references/文档内容_净化规则.md`
+  - 数据完整性 reference（无数据章节主动询问）：`../project-doc-write/references/data_missing_section.md` + `numeric_field_missing.md`
+- **元说明 skill（套件内各 skill 介绍）**：`../project-doc-overview/SKILL.md`
+- **统一澄清协议**：`../intent-clarification/SKILL.md`
+  - intent 5 子项：`../project-doc-query/references/intent.md`
+  - environment 10 个技术点：`../project-doc-outline/references/tech_*.md`
+- .project 日志管理脚本：`../project-doc-query/scripts/manage_project_log.py`（init / append-clarification / append-operation / read）
